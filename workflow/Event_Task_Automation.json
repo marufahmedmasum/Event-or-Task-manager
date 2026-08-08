@@ -1,0 +1,1729 @@
+{
+  "name": "Aurora Lite - Event Task Creator (Telegram)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "8fed04ee-e941-4d1c-9693-e1ff0609c14d",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1440,
+        2336
+      ],
+      "webhookId": "f7813c2b-dd3e-491f-a800-9dcbfc4efc70",
+      "credentials": {
+        "telegramApi": {
+          "id": "raIRfUiVZoYcVhUu",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message.text }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are Aurora, an assistant that reads a raw Telegram message (in Bengali, Banglish, or English) about a meeting, event, or task and extracts structured data.\n\nCurrent date & time (Asia/Dhaka):\n{{ $now.setZone('Asia/Dhaka').toFormat('yyyy-MM-dd HH:mm (cccc)') }}\n\n--------------------------------------------------\nCLASSIFICATION OVERVIEW\n--------------------------------------------------\n\nYou must output TWO separate classification fields:\n\n1. \"type\" → What kind of item this is about. Always one of:\n   - \"event\" → Refers to a meeting/appointment (has or implies a specific time).\n   - \"task\"  → Refers to a to-do/work item. Common Banglish words: korbo, korte hobe, dibo, pathabo, likhbo, banabo, submit korbo, send korbo, email korbo, call korbo, etc.\n   - \"none\"  → The message is unrelated/conversational and does not refer to any event or task at all.\n\n2. \"entity\" → What ACTION the user wants to perform on that item. Always one of:\n   - \"\"        (empty string) → CREATE a new event/task (default, normal case).\n   - \"delete\"  → DELETE, CANCEL, or REMOVE an existing event/task.\n   - \"details\" → VIEW, CHECK, LIST, or GET INFORMATION about existing event(s)/task(s).\n\nIMPORTANT: \"type\" and \"entity\" are independent. Always determine \"type\" \n(event/task/none) based on WHAT the message is about, and separately \ndetermine \"entity\" based on WHAT ACTION is being requested.\n\nIf \"type\" is \"none\", \"entity\" must always be \"\" (empty).\n\n--------------------------------------------------\nDATE RESOLUTION\n--------------------------------------------------\n\nResolve ALL relative dates into an absolute YYYY-MM-DD date.\n\nApply this rule regardless of type or entity (event/task, create/delete/details).\n\nInterpret the following:\n\nToday:\n- today\n- aj\n- aaj\n- aajke\n- ajke\n\nTomorrow:\n- tomorrow\n- kal\n- kalke\n- agamikal\n\nWeekdays:\n- robibar = Sunday\n- sombar = Monday\n- mongolbar = Tuesday\n- budhbar = Wednesday\n- brihospotibar = Thursday\n- sukrubar = Friday\n- sonibar = Saturday\n\nAlso resolve:\n- next Monday\n- next Tuesday\n- next week\n- this Friday\n- coming Sunday\n- etc.\n\nIMPORTANT:\n\nFor scheduling messages, interpret:\n\n- aj / aaj / ajke = today\n- kal / kalke / agamikal = tomorrow\n\nDo NOT interpret \"kal\" as yesterday unless the message clearly refers to the past.\n\nIf the message contains a date reference, ALWAYS populate the \"date\" field.\n\nOnly leave \"date\" empty if absolutely no date information exists.\n\n--------------------------------------------------\nTIME RESOLUTION\n--------------------------------------------------\n\nThe \"time\" field MUST ALWAYS be in strict 24-hour HH:mm format.\n\nExamples:\n\n16:00\n09:30\n21:15\n\nNever output:\n\n4 PM\n4pm\n4:00 PM\n4\n\nConvert Bengali/Banglish time words:\n\nMorning:\n- sokal\n- সকাল\n\nKeep hour as-is if between 5-11.\n\nExample:\nsokal 9 ta → 09:00\n\nNoon:\n- dupur\n- দুপুর\n\nExamples:\ndupur 12 ta → 12:00\ndupur 1 ta → 13:00\n\nAfternoon:\n- bikal\n- bikel\n- বিকাল\n- বিকেল\n\nIf hour is 1-7, add 12.\n\nExample:\nbikal 4 ta → 16:00\n\nEvening:\n- sondha\n- shondha\n- সন্ধ্যা\n\nIf hour is 1-8, add 12.\n\nExample:\nshondha 7 ta → 19:00\n\nNight:\n- rat\n- রাত\n\nIf hour is 1-11, add 12.\n\nExample:\nrat 9 ta → 21:00\n\nException:\n\nrat 12 ta → 00:00\n\nAlso support:\n\nAM\nPM\nmorning\nafternoon\nevening\nnight\n\nIf no AM/PM or time-of-day word exists and the hour is ambiguous (1-7), assume a meeting/event time.\n\nExample:\n\nMeeting at 4\n\n→ 16:00\n\nConvert Bengali digits (০১২৩৪৫৬৭৮৯) into Arabic digits.\n\n--------------------------------------------------\nENTITY = \"delete\" RULE\n--------------------------------------------------\n\nCheck first if the message expresses intent to DELETE, CANCEL, or REMOVE \nan existing event/task.\n\nCommon Bengali/Banglish delete-intent words include (but are not limited to):\n\n- delete koro / delete kore dao\n- muche felo / muche dao\n- kete dao / kete felo\n- baad dao / baad diye dao\n- cancel koro / cancel kore dao\n- remove koro\n- সরিয়ে দাও\n- বাতিল করো\n\nIf ANY of these appear:\n- Set entity = \"delete\"\n- Still determine \"type\" normally (event vs task) based on whether the \n  message refers to a meeting or a task/to-do item. If the message \n  mentions \"meeting\"/\"সভা\" → type = \"event\". If it mentions \"task\"/\n  \"কাজ\" or task-like wording → type = \"task\". If neither is clearly \n  mentioned but a delete intent exists, default type = \"task\".\n- Resolve and populate \"date\" if a date is mentioned.\n- time = \"\" unless a specific time is explicitly mentioned.\n- duration_minutes = 0\n\nExamples:\n\"19 tarikher shokol task delete koro\"\n→ type: \"task\", entity: \"delete\", date: resolved date\n\n\"kalker meeting ta cancel koro\"\n→ type: \"event\", entity: \"delete\", date: resolved date\n\n--------------------------------------------------\nENTITY = \"details\" RULE\n--------------------------------------------------\n\nCheck if the message is asking to VIEW, CHECK, LIST, or GET INFORMATION \nabout existing events/tasks — not to create or delete anything.\n\nCommon Bengali/Banglish details-intent words include (but are not limited to):\n\n- dekhte chai / dekhao / dekha dao\n- ki ache / ki ki ache\n- list dao / list koro\n- show koro\n- details dao / details bolo\n- ache kina\n- kobe / kokhon (when asking about existing schedule, e.g. \"kobe meeting ache\")\n\nIf the message matches this intent:\n- Set entity = \"details\"\n- Determine \"type\" the same way as above (event vs task based on wording; \n  default to \"task\" if ambiguous).\n- Resolve and populate \"date\" if a date is mentioned.\n- time = \"\" unless a specific time is explicitly mentioned.\n- duration_minutes = 0\n\nExamples:\n\"19 tarikhe ki ki task ache dekhao\"\n→ type: \"task\", entity: \"details\", date: resolved date\n\n\"ajke amar ki meeting ache\"\n→ type: \"event\", entity: \"details\", date: resolved date (today)\n\n--------------------------------------------------\nENTITY = \"\" (CREATE) — TASK RULES\n--------------------------------------------------\n\nApplies when type = \"task\" and entity = \"\" (no delete/details intent detected).\n\nTasks may have a due date.\n\nIf a task mentions:\n\ntoday\ntomorrow\nkal\nagamikal\najke\nMonday\nsonibar\netc.\n\nResolve the date and populate the \"date\" field.\n\nFor tasks:\n\n- time = \"\"\n- duration_minutes = 0\n\nunless the user explicitly provides a meeting/event time.\n\n--------------------------------------------------\nENTITY = \"\" (CREATE) — EVENT RULES\n--------------------------------------------------\n\nApplies when type = \"event\" and entity = \"\" (no delete/details intent detected).\n\nPopulate:\n\n- title\n- date\n- time\n- duration_minutes\n\nIf no duration is mentioned, use:\n\n60\n\n--------------------------------------------------\nTYPE = \"none\" RULE\n--------------------------------------------------\n\nIf the message is truly unrelated or conversational and does not refer \nto any event or task at all:\n\ntype = \"none\"\nentity = \"\"\n\nSet title to a short reason.\n\nLeave other fields empty or 0.\n\nException: If the message mentions a specific date, even for \"none\" type, \nstill populate the \"date\" field with the resolved date. Only leave date \nempty if no date is mentioned at all.\n\n--------------------------------------------------\nOUTPUT FORMAT\n--------------------------------------------------\n\nReturn ONLY valid JSON.\n\nAlways wrap everything under one top-level key called \"output\".\nField order: type, title, date, time, duration_minutes, description, location_or_link, priority, entity, keyword.\n\nFor event (create):\n\n{\n  \"output\": {\n    \"type\": \"event\",\n    \"title\": \"...\",\n    \"date\": \"2026-07-20\",\n    \"time\": \"16:00\",\n    \"duration_minutes\": 60,\n    \"description\": \"\",\n    \"location_or_link\": \"\",\n    \"priority\": \"normal\",\n    \"entity\": \"\",\n    \"keyword\": \"\"\n  }\n}\n\nFor task (create):\n\n{\n  \"output\": {\n    \"type\": \"task\",\n    \"title\": \"...\",\n    \"date\": \"2026-07-19\",\n    \"time\": \"\",\n    \"duration_minutes\": 0,\n    \"description\": \"\",\n    \"location_or_link\": \"\",\n    \"priority\": \"normal\",\n    \"entity\": \"\",\n    \"keyword\": \"\"\n  }\n}\n\nFor delete (task or event):\n\n{\n  \"output\": {\n    \"type\": \"task\",\n    \"title\": \"Delete all tasks on 19th\",\n    \"date\": \"2026-07-19\",\n    \"time\": \"\",\n    \"duration_minutes\": 0,\n    \"description\": \"\",\n    \"location_or_link\": \"\",\n    \"priority\": \"normal\",\n    \"entity\": \"delete\",\n    \"keyword\": \"\"\n  }\n}\n\nFor details (task or event):\n\n{\n  \"output\": {\n    \"type\": \"task\",\n    \"title\": \"List of tasks on 19th\",\n    \"date\": \"2026-07-19\",\n    \"time\": \"\",\n    \"duration_minutes\": 0,\n    \"description\": \"\",\n    \"location_or_link\": \"\",\n    \"priority\": \"normal\",\n    \"entity\": \"details\",\n    \"keyword\": \"\"\n  }\n}\n\nFor none:\n\n{\n  \"output\": {\n    \"type\": \"none\",\n    \"title\": \"No schedulable item found\",\n    \"date\": \"\",\n    \"time\": \"\",\n    \"duration_minutes\": 0,\n    \"description\": \"\",\n    \"location_or_link\": \"\",\n    \"priority\": \"normal\",\n    \"entity\": \"\",\n    \"keyword\": \"\"\n  }\n}\n\nNever output markdown.\n\nNever explain your reasoning.\n\nReturn JSON only."
+        }
+      },
+      "id": "0344373d-7ee9-40cd-ae42-2fd2fe68b0e3",
+      "name": "Classifier Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -992,
+        2016
+      ]
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "8ab88055-b5cc-449a-9052-a2b1423b00b6",
+      "name": "Groq Model (Classifier)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -976,
+        2240
+      ],
+      "credentials": {
+        "groqApi": {
+          "id": "mlEFjLormhkiE8ob",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\"type\": \"event\", \"title\": \"Client meeting with ABC Traders\", \"date\": \"2026-07-20\", \"time\": \"15:30\", \"duration_minutes\": 60, \"description\": \"Discuss partnership and pricing\", \"location_or_link\": \"Google Meet\", \"priority\": \"normal\", \"entity\": \"event\", \"keyword\": \"\"}"
+      },
+      "id": "18bbdfca-25da-4572-993c-831e2f7bc265",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -848,
+        2240
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.type }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "event",
+                    "id": "6c7156f8-8186-46e6-8f49-19c5687812c5"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.type }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "task",
+                    "id": "def256f5-175f-4b63-9235-8eddf19c46bb"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "None",
+          "allMatchingOutputs": false
+        }
+      },
+      "id": "fee05ac3-3f9c-4f31-8e39-0e2066243f38",
+      "name": "Route: Event / Task / None",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -128,
+        1520
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "dostmasum@gmail.com",
+          "mode": "list",
+          "cachedResultName": "dostmasum@gmail.com"
+        },
+        "timeMin": "={{ DateTime.fromFormat($json.date, 'yyyy-MM-dd', { zone: 'Asia/Dhaka' }).startOf('day').toISO() }}",
+        "timeMax": "={{ DateTime.fromFormat($json.date, 'yyyy-MM-dd', { zone: 'Asia/Dhaka' }).endOf('day').toISO() }}",
+        "options": {
+          "timeZone": {
+            "__rl": true,
+            "value": "Asia/Dhaka",
+            "mode": "list"
+          }
+        }
+      },
+      "id": "0b52cd28-70d7-42d4-9cd3-f46fe110f8b1",
+      "name": "Get Existing Calendar Events",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        384,
+        1424
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "ndATnaorTBnK05aV",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "dostmasum@gmail.com",
+          "mode": "list",
+          "cachedResultName": "dostmasum@gmail.com"
+        },
+        "start": "={{ DateTime.fromFormat(`${$json.date} ${$json.time}`, 'yyyy-MM-dd HH:mm', { zone: 'Asia/Dhaka' }).toISO() }}",
+        "end": "={{ DateTime.fromFormat(`${$json.date} ${$json.time}`, 'yyyy-MM-dd HH:mm', { zone: 'Asia/Dhaka' }).plus({ minutes: Number($json.duration_minutes || 60) }).toISO() }}",
+        "additionalFields": {
+          "description": "={{ $json.description }}",
+          "location": "={{ $json.location_or_link }}",
+          "summary": "={{ $json.title }}"
+        }
+      },
+      "id": "6c0a6a35-84cd-4880-8c9f-a77b4e363202",
+      "name": "Create Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1056,
+        1616
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "ndATnaorTBnK05aV",
+          "name": "Google Calendar account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=✅ {{ (() => { try { $('Prepare Replace Candidate').item; return '🔁 পুরনো মিটিং বাদ দিয়ে '; } catch(e) { return ''; } })() }}Calendar Event তৈরি হয়েছে!\n\n📌 {{ $json.summary }}\n🕒 {{ $json.start.dateTime }}\n🔗 {{ $json.htmlLink }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "32b218ba-bf75-4e53-a6b1-878e07d8663b",
+      "name": "Reply: Event Created",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1280,
+        1616
+      ],
+      "webhookId": "1402af13-823d-4cc5-a4f8-a316d5e8aeb7",
+      "credentials": {
+        "telegramApi": {
+          "id": "raIRfUiVZoYcVhUu",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=❌ দুঃখিত, আপনার ইভেন্টটি Google Calendar-এ যোগ করা যায়নি।  কারণ: {{ $json.error?.message || \"Unknown error\" }}  অনুগ্রহ করে তারিখ ও সময় আবার লিখে চেষ্টা করুন।",
+        "additionalFields": {}
+      },
+      "id": "d7beb748-04e5-4b13-94fd-cb9e002cb2b2",
+      "name": "Reply: Event Failed",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1280,
+        2000
+      ],
+      "webhookId": "89a7f0b4-0288-491c-8ea8-78ed97fc8815",
+      "credentials": {
+        "telegramApi": {
+          "id": "raIRfUiVZoYcVhUu",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "task": "MTY5ODIxMDU3MTAzMzQ3NDY3MTM6MDow",
+        "additionalFields": {}
+      },
+      "id": "918e0759-d849-47fb-96e8-56699366218b",
+      "name": "Get Existing Tasks",
+      "type": "n8n-nodes-base.googleTasks",
+      "typeVersion": 1,
+      "position": [
+        160,
+        1616
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleTasksOAuth2Api": {
+          "id": "hk26yhfTkZGFDm5b",
+          "name": "Google Tasks account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const targetTitle = ($('Classifier Agent').item.json.output.title || '').trim().toLowerCase();\nconst existing = $input.all();\nconst isDuplicate = existing.some(item => (item.json.title || '').trim().toLowerCase() === targetTitle);\nconst out = { ...$('Classifier Agent').item.json.output, isDuplicate };\nreturn [{ json: out }];"
+      },
+      "id": "bea8684b-ec85-42ed-bf96-c990cdbe742d",
+      "name": "Check Task Duplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        1616
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isDuplicate }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "rightValue": true,
+              "id": "e29d3b3a-96f6-4ebf-bb3b-64436f436fb6"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6a08902b-8773-482c-b99f-859bf9036498",
+      "name": "Task Already Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        608,
+        1616
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=⚠️ Task Already Exists!\n\n📌 {{ $json.title }}\n\nDuplicate তাই নতুন কিছু create করা হয়নি।",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "7ab5e89f-65a5-474d-876f-456e00b1382a",
+      "name": "Reply: Task Duplicate",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        832,
+        1616
+      ],
+      "webhookId": "e1f06c60-ee97-4ea2-a7ce-173179703ced",
+      "credentials": {
+        "telegramApi": {
+          "id": "raIRfUiVZoYcVhUu",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "task": "MTY5ODIxMDU3MTAzMzQ3NDY3MTM6MDow",
+        "title": "={{ $json.title }}",
+        "additionalFields": {
+          "dueDate": "={{ $json.date }}T00:00:00.000Z",
+          "notes": "={{ $json.description }}"
+        }
+      },
+      "id": "1ff59765-997f-4ec3-a7ee-9f13da5c2b1d",
+      "name": "Create Google Task",
+      "type": "n8n-nodes-base.googleTasks",
+      "typeVersion": 1,
+      "position": [
+        832,
+        1808
+      ],
+      "credentials": {
+        "googleTasksOAuth2Api": {
+          "id": "hk26yhfTkZGFDm5b",
+          "name": "Google Tasks account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=✅ <b>Task তৈরি হয়েছে (Google Tasks)!</b>\n\n📌 {{ $json.title }}\n\n🔗  {{ $json.webViewLink }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "42f2bf41-f500-4a80-91d5-8a0aa98cdcce",
+      "name": "Reply: Task Created",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1056,
+        1808
+      ],
+      "webhookId": "54bad184-2ab5-4adf-b19e-9bf3d5820f1c",
+      "credentials": {
+        "telegramApi": {
+          "id": "raIRfUiVZoYcVhUu",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=❌ Task Create করা যায়নি।\n\nError: {{ $json.error?.message || \"Unknown error\" }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "86669fc1-305a-4040-8956-8e08872020b9",
+      "name": "Reply: Task Failed",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1056,
+        2000
+      ],
+      "webhookId": "ee3e9724-e081-41f8-a5ae-d04944804c5e",
+      "credentials": {
+        "telegramApi": {
+          "id": "raIRfUiVZoYcVhUu",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=🤔 এই মেসেজটা Event নাকি Task বুঝতে পারিনি:\n\n\"{{ $('Telegram Trigger').item.json.message.text }}\"\n\nদয়া করে স্পষ্ট করে আবার লিখুন। যেমন:\n- Meeting with client tomorrow 5pm\n- Buy domain for OrderBot BD",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "ea50f18c-ca42-4e4a-a44a-e9460ccd4e86",
+      "name": "Reply: Not Recognized",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        160,
+        2000
+      ],
+      "webhookId": "db42f0db-901f-4f54-8361-35a71c4ce441",
+      "credentials": {
+        "telegramApi": {
+          "id": "raIRfUiVZoYcVhUu",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst out = items.map(item => {\n  const src = item.json.output || {};\n  const o = { ...src };\n\n  // Normalize time to strict 24-hour HH:mm (handles '10:00 AM', '10:00', '22:15', etc.)\n  let t = String(o.time || '').trim();\n  if (t) {\n    let dt = DateTime.fromFormat(t, 'h:mm a', { zone: 'Asia/Dhaka' });\n    if (!dt.isValid) dt = DateTime.fromFormat(t, 'hh:mm a', { zone: 'Asia/Dhaka' });\n    if (!dt.isValid) dt = DateTime.fromFormat(t, 'H:mm', { zone: 'Asia/Dhaka' });\n    if (!dt.isValid) dt = DateTime.fromFormat(t, 'HH:mm', { zone: 'Asia/Dhaka' });\n    o.time = dt.isValid ? dt.toFormat('HH:mm') : '09:00';\n  } else {\n    o.time = o.type === 'event' ? '09:00' : '';\n  }\n\n  o.priority = String(o.priority || 'normal').toLowerCase();\n  if (!o.duration_minutes || o.duration_minutes <= 0) o.duration_minutes = 60;\n\n  return { json: { output: o } };\n});\nreturn out;"
+      },
+      "id": "4189523d-e5a4-4381-b63e-ea6d95a9df2c",
+      "name": "Normalize Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        2192
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ ($json.message.reply_to_message && $json.message.reply_to_message.text) || '' }}",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              },
+              "rightValue": "REF:",
+              "id": "aecb6c93-5f14-405c-bdd9-fb2867f4f3f0"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4afb14d6-e7c4-4f60-929f-b298a93d2360",
+      "name": "Is Reply To Aurora?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1216,
+        2336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const o = $json.output;\nreturn [{ json: {\n  title: o.title,\n  date: o.date,\n  time: o.time,\n  duration_minutes: o.duration_minutes,\n  description: o.description,\n  location_or_link: o.location_or_link,\n  chatId: $('Telegram Trigger').item.json.message.chat.id\n} }];"
+      },
+      "id": "5414eaa4-ef42-4348-abab-4cc784986675",
+      "name": "Prepare Event Candidate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        1424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $json.message;\nconst replyText = (msg.text || '').trim();\nconst origText = (msg.reply_to_message && msg.reply_to_message.text) || '';\nconst marker = 'AURORA-REF:';\nconst idx = origText.indexOf(marker);\nlet pending = {};\nif (idx !== -1) {\n  const b64 = origText.slice(idx + marker.length).trim();\n  try {\n    const jsonStr = Buffer.from(b64, 'base64').toString('utf-8');\n    pending = JSON.parse(jsonStr);\n  } catch (e) { pending = {}; }\n}\nreturn [{ json: { ...pending, replyText, chatId: msg.chat.id } }];"
+      },
+      "id": "4c69902c-167d-49e8-9147-f8a6492d1140",
+      "name": "Parse Pending Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        2768
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.replyText }}",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              },
+              "rightValue": "(Replace|রিপ্লেস|পরিবর্তন)",
+              "id": "4d359488-5ccb-49b7-8dc3-374fa675ba12"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "472d9927-aeda-4de7-ace1-f1b23931f0f1",
+      "name": "Is Replace?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -416,
+        2768
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "value": "dostmasum@gmail.com",
+          "mode": "list",
+          "cachedResultName": "dostmasum@gmail.com"
+        },
+        "eventId": "={{ $json.conflictEventId }}",
+        "options": {}
+      },
+      "id": "4cd4a683-cdf1-490e-9a55-f95c524e6312",
+      "name": "Delete Conflicting Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        608,
+        2768
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "ndATnaorTBnK05aV",
+          "name": "Google Calendar account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pending = $('Parse Pending Event').item.json;\nreturn [{ json: { ...pending, wasReplaced: true } }];"
+      },
+      "id": "b70f78f5-f5e5-4f2f-a340-e4164a76eaf2",
+      "name": "Prepare Replace Candidate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        2768
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.replyText }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are Aurora's time-parser. The user was asked to propose a new time for a meeting titled \"{{ $('Parse Pending Event').item.json.title }}\", originally requested for {{ $('Parse Pending Event').item.json.date }} {{ $('Parse Pending Event').item.json.time }}, because that slot was already busy.\n\nCurrent date & time (Asia/Dhaka): {{ $now.setZone(\"Asia/Dhaka\").toFormat(\"yyyy-MM-dd HH:mm\") }} ({{ $now.setZone(\"Asia/Dhaka\").toFormat(\"cccc\") }})\n\nThe user's reply (Bengali or English) proposes a new time, and possibly a new date. Resolve relative dates (kal, aajke, next Monday, etc.) into absolute values using the current date above. If the user only mentions a time and no date, keep the date the same as the original: {{ $('Parse Pending Event').item.json.date }}.\n\nTIME RESOLUTION -- this is critical, get it right:\nThe \"time\" field must ALWAYS be strict 24-hour \"HH:mm\" format (e.g. \"16:00\", not \"4:00 PM\" or \"4:00\").\nConvert Bengali time-of-day words using these rules:\n- সকাল (morning): hour stays as-is if 5-11, e.g. \"সকাল ৯টা\" -> 09:00\n- দুপুর (noon/early afternoon): 12-3, e.g. \"দুপুর ১টা\" -> 13:00, \"দুপুর ১২টা\" -> 12:00\n- বিকাল / বিকেল (afternoon): add 12 if hour is 1-7, e.g. \"বিকাল ৪টা\" -> 16:00, \"বিকেল ৫টা\" -> 17:00\n- সন্ধ্যা (evening): add 12 if hour is 1-8, e.g. \"সন্ধ্যা ৭টা\" -> 19:00\n- রাত (night): add 12 if hour is 1-11 (except \"রাত ১২টা\" = 00:00), e.g. \"রাত ৯টা\" -> 21:00\nApply the same logic for English am/pm words (morning/afternoon/evening/night) and explicit \"AM\"/\"PM\". Bengali digits (০-৯) must be converted to Arabic numerals in the output.\n\nReturn JSON only, matching the schema.\n"
+        }
+      },
+      "id": "5159b489-4cba-43b6-9e03-5bf45698c62e",
+      "name": "Time Parser Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -192,
+        3008
+      ]
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "5606c568-f002-4f92-b295-ad6ae80cb519",
+      "name": "Groq Model (Time Parser)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -272,
+        3184
+      ],
+      "credentials": {
+        "groqApi": {
+          "id": "mlEFjLormhkiE8ob",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\"date\": \"2026-07-20\", \"time\": \"17:00\"}"
+      },
+      "id": "e58a873f-d4c7-4223-810a-eb60ff6001f6",
+      "name": "Structured Output Parser (Time)",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        16,
+        3184
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pending = $('Parse Pending Event').item.json;\nconst parsed = $json.output || {};\nlet t = String(parsed.time || '').trim();\nlet dt = null;\nif (t) {\n  dt = DateTime.fromFormat(t, 'H:mm', { zone: 'Asia/Dhaka' });\n  if (!dt.isValid) dt = DateTime.fromFormat(t, 'HH:mm', { zone: 'Asia/Dhaka' });\n  if (!dt.isValid) dt = DateTime.fromFormat(t, 'h:mm a', { zone: 'Asia/Dhaka' });\n  if (!dt.isValid) dt = DateTime.fromFormat(t, 'hh:mm a', { zone: 'Asia/Dhaka' });\n}\nconst time24 = (dt && dt.isValid) ? dt.toFormat('HH:mm') : (pending.time || '09:00');\nconst date = parsed.date || pending.date;\n\nreturn [{ json: {\n  title: pending.title,\n  date,\n  time: time24,\n  duration_minutes: pending.duration_minutes,\n  description: pending.description,\n  location_or_link: pending.location_or_link,\n  chatId: pending.chatId\n} }];"
+      },
+      "id": "688a4e7e-4a8d-4cb9-be86-dfe9267baa44",
+      "name": "Build New Time Candidate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        3008
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function getCandidate() {\n  const names = ['Prepare Event Candidate', 'Build New Time Candidate', 'Prepare Replace Candidate'];\n  for (const n of names) {\n    try {\n      const d = $(n).item.json;\n      if (d && d.date) return d;\n    } catch (e) {}\n  }\n  return {};\n}\n\nconst candidate = getCandidate();\nconst tz = 'Asia/Dhaka';\nconst start = DateTime.fromFormat(`${candidate.date} ${candidate.time}`, 'yyyy-MM-dd HH:mm', { zone: tz });\nconst durationMin = Number(candidate.duration_minutes || 60);\nconst end = start.plus({ minutes: durationMin });\n\nconst events = $input.all();\nlet conflict = null;\nfor (const item of events) {\n  const ev = item.json;\n  if (!ev.start || !ev.start.dateTime || !ev.end || !ev.end.dateTime) continue;\n  const evStart = DateTime.fromISO(ev.start.dateTime);\n  const evEnd = DateTime.fromISO(ev.end.dateTime);\n  if (start < evEnd && end > evStart) {\n    conflict = { id: ev.id, title: ev.summary || '(No title)', start: evStart.toFormat('yyyy-MM-dd HH:mm'), end: evEnd.toFormat('yyyy-MM-dd HH:mm') };\n    break;\n  }\n}\n\nconst refPayload = {\n  title: candidate.title,\n  date: candidate.date,\n  time: candidate.time,\n  duration_minutes: candidate.duration_minutes,\n  description: candidate.description,\n  location_or_link: candidate.location_or_link,\n  conflictEventId: conflict ? conflict.id : ''\n};\nconst auroraRef = Buffer.from(JSON.stringify(refPayload)).toString('base64');\n\nreturn [{ json: {\n  ...candidate,\n  isConflict: !!conflict,\n  conflictEventId: conflict ? conflict.id : '',\n  conflictTitle: conflict ? conflict.title : '',\n  conflictStart: conflict ? conflict.start : '',\n  conflictEnd: conflict ? conflict.end : '',\n  auroraRef\n} }];"
+      },
+      "id": "0e43efbc-b36d-4bae-83c3-1c5de7266dff",
+      "name": "Check Time Overlap",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        1424
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isConflict }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "rightValue": true,
+              "id": "662d1d7d-12d8-4503-9d02-eb6b6544af2e"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a4609b18-36f1-43ed-914d-05f527ef0ec9",
+      "name": "Time Conflict?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        832,
+        1424
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "=⚠️ এই সময়ে ইতিমধ্যে একটা মিটিং শিডিউল করা আছে!\n\n📌 বিদ্যমান মিটিং: {{ $json.conflictTitle }}\n🕒 {{ $json.conflictStart }} — {{ $json.conflictEnd }}\n\nআপনার প্রস্তাবিত মিটিং:\n📌 {{ $json.title }}\n🕒 {{ $json.date }} {{ $json.time }} ({{ $json.duration_minutes }} মিনিট)\n\nএই মেসেজে reply করে জানান:\n👉 \"Replace\" লিখলে পুরনো মিটিং বাদ দিয়ে এই সময়েই নতুন মিটিং create হবে\n👉 অথবা নতুন সময় লিখুন (যেমন: \"বিকাল ৫টা\" বা \"5pm\" বা \"2026-07-20 17:00\"), সেই সময় খালি থাকলে meeting create হয়ে যাবে\n\nAURORA-REF:{{ $json.auroraRef }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "e265a826-ba40-429c-8e40-77c43a494e86",
+      "name": "Reply: Time Conflict",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1056,
+        1408
+      ],
+      "webhookId": "77cea902-35c1-4cfb-aeec-edd94c40074e",
+      "credentials": {
+        "telegramApi": {
+          "id": "raIRfUiVZoYcVhUu",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const o = $json.output;\nreturn [{ json: {\n  entity: o.type,   // সরাসরি Aurora-র \"type\" field ব্যবহার করুন\n  date: o.date,\n  time: o.time,\n  keyword: o.keyword,\n  title: o.title,\n  chatId: $('Telegram Trigger').item.json.message.chat.id\n} }];"
+      },
+      "id": "bfe49b81-f24c-422a-b975-4581fb076cd6",
+      "name": "Prepare Delete Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        2192
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "aa000001-0000-0000-0000-000000000001",
+              "leftValue": "={{ $json.entity }}",
+              "operator": {
+                "operation": "equals",
+                "type": "string"
+              },
+              "rightValue": "task"
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          }
+        },
+        "options": {}
+      },
+      "id": "67700aa4-5a3d-4c74-99ea-45b8909f2861",
+      "name": "Delete: Event or Task?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        160,
+        2192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "cachedResultName": "dostmasum@gmail.com",
+          "mode": "list",
+          "value": "dostmasum@gmail.com"
+        },
+        "timeMin": "={{ DateTime.fromFormat($json.date, 'yyyy-MM-dd', { zone: 'Asia/Dhaka' }).startOf('day').toISO() }}",
+        "timeMax": "={{ DateTime.fromFormat($json.date, 'yyyy-MM-dd', { zone: 'Asia/Dhaka' }).endOf('day').toISO() }}",
+        "options": {
+          "timeZone": {
+            "__rl": true,
+            "mode": "list",
+            "value": "Asia/Dhaka"
+          }
+        }
+      },
+      "id": "2b39044d-3ed0-4980-8699-26b6166748f2",
+      "name": "Get Events To Delete",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        384,
+        2176
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "ndATnaorTBnK05aV",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const req = $('Prepare Delete Request').item.json;\nconst events = $input.all().filter(e => e.json && e.json.id);\nlet matches = [];\n\nif (req.date) {\n  matches = events.filter(e => {\n    const dt = e.json.start && (e.json.start.dateTime || e.json.start.date)\n      ? DateTime.fromISO(e.json.start.dateTime || e.json.start.date).setZone('Asia/Dhaka').toFormat('yyyy-MM-dd')\n      : null;\n    return dt === req.date;\n  });\n} else if (req.time) {\n  matches = events.filter(e => {\n    const dt = e.json.start && e.json.start.dateTime\n      ? DateTime.fromISO(e.json.start.dateTime).setZone('Asia/Dhaka').toFormat('HH:mm')\n      : null;\n    return dt === req.time;\n  });\n} else if (req.keyword) {\n  const kw = req.keyword.toLowerCase();\n  matches = events.filter(e => (e.json.summary || '').toLowerCase().includes(kw));\n} else {\n  matches = events;\n}\n\nreturn matches.map(e => ({\n  json: {\n    eventId: e.json.id,\n    summary: e.json.summary || '(শিরোনামহীন)',\n    startIso: (e.json.start && (e.json.start.dateTime || e.json.start.date)) || ''\n  }\n}));"
+      },
+      "id": "efadb2f3-176f-41d2-a158-bf09c1e339ea",
+      "name": "Filter Matching Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        2176
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "cachedResultName": "dostmasum@gmail.com",
+          "mode": "list",
+          "value": "dostmasum@gmail.com"
+        },
+        "eventId": "={{ $json.eventId }}",
+        "options": {}
+      },
+      "id": "c86b1968-93b0-49b0-976d-5ae8e1340b0d",
+      "name": "Delete Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        832,
+        2176
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "ndATnaorTBnK05aV",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const req = $('Prepare Delete Request').item.json;\nconst deleted = $('Filter Matching Events').all();\nconst count = deleted.length;\nlet text;\nif (count === 0) {\n  text = `🔍 ${req.date}${req.time ? ' ' + req.time : ''} সময়ে ম্যাচ করা কোনো মিটিং পাওয়া যায়নি, তাই কিছু delete করা হয়নি।`;\n} else {\n  const lines = deleted.map(e => {\n    const t = e.json.startIso ? (e.json.startIso.length > 10 ? DateTime.fromISO(e.json.startIso).setZone('Asia/Dhaka').toFormat('HH:mm') : 'সারাদিন') : '';\n    return `• ${e.json.summary}${t ? ' (' + t + ')' : ''}`;\n  });\n  text = `🗑️ <b>${count}টি মিটিং delete করা হয়েছে</b> (${req.date}):\\n\\n${lines.join('\\n')}`;\n}\nreturn [{ json: { chatId: req.chatId, text } }];"
+      },
+      "id": "f2b85b7d-d2f2-4de8-958a-8061b6dbc7bb",
+      "name": "Build Delete Summary (Events)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1056,
+        2192
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "0680c77a-b26c-4a30-b776-05c2fd3c162d",
+      "name": "Reply: Events Deleted",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1280,
+        2192
+      ],
+      "webhookId": "3124f4a4-9034-430a-8b90-a99abf6dbcc9",
+      "credentials": {
+        "telegramApi": {
+          "id": "raIRfUiVZoYcVhUu",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "task": "MTY5ODIxMDU3MTAzMzQ3NDY3MTM6MDow",
+        "additionalFields": {}
+      },
+      "id": "acc08667-b062-4717-9d83-de05245a4401",
+      "name": "Get Tasks To Delete",
+      "type": "n8n-nodes-base.googleTasks",
+      "typeVersion": 1,
+      "position": [
+        384,
+        2384
+      ],
+      "credentials": {
+        "googleTasksOAuth2Api": {
+          "id": "hk26yhfTkZGFDm5b",
+          "name": "Google Tasks account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const req = $('Prepare Delete Request').item.json;\nconst tasks = $input.all().filter(t => t.json && t.json.id);\nlet matches;\nif (req.keyword) {\n  const kw = req.keyword.toLowerCase();\n  matches = tasks.filter(t => (t.json.title || '').toLowerCase().includes(kw));\n} else {\n  matches = tasks.filter(t => {\n    if (!t.json.due) return false;\n    const dueDate = DateTime.fromISO(t.json.due).setZone('Asia/Dhaka').toFormat('yyyy-MM-dd');\n    return dueDate === req.date;\n  });\n}\nreturn matches.map(t => ({ json: { taskId: t.json.id, title: t.json.title || '(শিরোনামহীন)' } }));"
+      },
+      "id": "4e140323-e29c-4667-bc5d-ef94a827f846",
+      "name": "Filter Matching Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        2384
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "task": "MTY5ODIxMDU3MTAzMzQ3NDY3MTM6MDow",
+        "taskId": "={{ $json.taskId }}"
+      },
+      "id": "a03605b8-3942-45e9-bd5b-a4c6bf732213",
+      "name": "Delete Google Task",
+      "type": "n8n-nodes-base.googleTasks",
+      "typeVersion": 1,
+      "position": [
+        832,
+        2384
+      ],
+      "credentials": {
+        "googleTasksOAuth2Api": {
+          "id": "hk26yhfTkZGFDm5b",
+          "name": "Google Tasks account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const req = $('Prepare Delete Request').item.json;\nconst deleted = $('Filter Matching Tasks').all();\nconst count = deleted.length;\nlet text;\nif (count === 0) {\n  text = `🔍 ${req.date} তারিখে ম্যাচ করা কোনো task পাওয়া যায়নি, তাই কিছু delete করা হয়নি।`;\n} else {\n  const lines = deleted.map(t => `• ${t.json.title}`);\n  text = `🗑️ <b>${count}টি task delete করা হয়েছে</b> (${req.date}):\\n\\n${lines.join('\\n')}`;\n}\nreturn [{ json: { chatId: req.chatId, text } }];"
+      },
+      "id": "05095fd0-8004-4d43-b839-808abfa00c39",
+      "name": "Build Delete Summary (Tasks)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1056,
+        2384
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "b1e900a2-e457-4988-afa7-b197df6c0928",
+      "name": "Reply: Tasks Deleted",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1280,
+        2384
+      ],
+      "webhookId": "f150522e-188d-427c-9693-66b8c39e3373",
+      "credentials": {
+        "telegramApi": {
+          "id": "raIRfUiVZoYcVhUu",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const o = $json.output;\nreturn [{ json: { date: o.date, entity: o.entity || 'both', chatId: $('Telegram Trigger').item.json.message.chat.id } }];"
+      },
+      "id": "ab23e814-cf2b-4edf-b32b-8d1f0646224a",
+      "name": "Prepare Query Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        2576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "cachedResultName": "dostmasum@gmail.com",
+          "mode": "list",
+          "value": "dostmasum@gmail.com"
+        },
+        "timeMin": "={{ DateTime.fromFormat($json.date, 'yyyy-MM-dd', { zone: 'Asia/Dhaka' }).startOf('day').toISO() }}",
+        "timeMax": "={{ DateTime.fromFormat($json.date, 'yyyy-MM-dd', { zone: 'Asia/Dhaka' }).endOf('day').toISO() }}",
+        "options": {
+          "timeZone": {
+            "__rl": true,
+            "mode": "list",
+            "value": "Asia/Dhaka"
+          }
+        }
+      },
+      "id": "aa1b533d-b348-4695-bc97-75f4ffb1b753",
+      "name": "Get Events For Query",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -128,
+        2576
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "ndATnaorTBnK05aV",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "task": "MTY5ODIxMDU3MTAzMzQ3NDY3MTM6MDow",
+        "additionalFields": {}
+      },
+      "id": "2174e303-aacc-405c-b7f1-2fc245e4c6b8",
+      "name": "Get Tasks For Query",
+      "type": "n8n-nodes-base.googleTasks",
+      "typeVersion": 1,
+      "position": [
+        160,
+        2576
+      ],
+      "credentials": {
+        "googleTasksOAuth2Api": {
+          "id": "hk26yhfTkZGFDm5b",
+          "name": "Google Tasks account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const req = $('Prepare Query Request').item.json;\nconst events = $('Get Events For Query').all().filter(e => e.json && e.json.id);\nconst allTasks = $('Get Tasks For Query').all().filter(t => t.json && t.json.id);\nconst dayTasks = allTasks.filter(t => {\n  if (!t.json.due) return false;\n  return DateTime.fromISO(t.json.due).setZone('Asia/Dhaka').toFormat('yyyy-MM-dd') === req.date;\n});\n\nlet text = `🗓️ <b>${req.date}</b> তারিখের সময়সূচী:\\n\\n`;\n\nif (req.entity !== 'task') {\n  text += `📅 <b>Meetings (${events.length}):</b>\\n`;\n  if (events.length === 0) {\n    text += 'কোনো মিটিং নেই।\\n';\n  } else {\n    events.forEach(e => {\n      const s = (e.json.start && e.json.start.dateTime) ? DateTime.fromISO(e.json.start.dateTime).setZone('Asia/Dhaka').toFormat('HH:mm') : 'সারাদিন';\n      const en = (e.json.end && e.json.end.dateTime) ? DateTime.fromISO(e.json.end.dateTime).setZone('Asia/Dhaka').toFormat('HH:mm') : '';\n      const attendees = (e.json.attendees || []).map(a => a.displayName || a.email).join(', ') || 'কোনো participant নেই';\n      text += `\\n• <b>${e.json.summary || '(শিরোনামহীন)'}</b>\\n  🕒 ${s}${en ? ' - ' + en : ''}\\n  👥 ${attendees}`;\n      if (e.json.location) text += `\\n  📍 ${e.json.location}`;\n      text += '\\n';\n    });\n  }\n  text += '\\n';\n}\n\nif (req.entity !== 'event') {\n  text += `✅ <b>Tasks (${dayTasks.length}):</b>\\n`;\n  if (dayTasks.length === 0) {\n    text += 'কোনো task নেই।\\n';\n  } else {\n    dayTasks.forEach(t => {\n      text += `\\n• ${t.json.title}${t.json.notes ? ' — ' + t.json.notes : ''}\\n`;\n    });\n  }\n}\n\nreturn [{ json: { chatId: req.chatId, text } }];"
+      },
+      "id": "519a16b6-d159-42f7-9d19-cb704993ed65",
+      "name": "Build Day Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        2576
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "fb1589d4-2489-47ef-a77c-b8862de1a134",
+      "name": "Reply: Day Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        608,
+        2576
+      ],
+      "webhookId": "00206eed-fb8e-4edd-b449-3ea3edc2969d",
+      "credentials": {
+        "telegramApi": {
+          "id": "raIRfUiVZoYcVhUu",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.entity }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "37f34ce0-6f3d-42eb-b7e7-01645df78477"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "d6314da8-82bb-4c65-ba9c-d9789fdcfb14",
+                    "leftValue": "={{ $json.output.entity }}",
+                    "rightValue": "details",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "76edb1dd-0389-4d11-9ef4-031883d54546",
+                    "leftValue": "={{ $json.output.entity }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -640,
+        2000
+      ],
+      "id": "02736657-87b7-4c04-a4af-f80c1cbaf8f1",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst out = items.map(item => {\n  const src = item.json.output || {};\n  const o = { ...src };\n\n  // Normalize time to strict 24-hour HH:mm (handles '10:00 AM', '10:00', '22:15', etc.)\n  let t = String(o.time || '').trim();\n  if (t) {\n    let dt = DateTime.fromFormat(t, 'h:mm a', { zone: 'Asia/Dhaka' });\n    if (!dt.isValid) dt = DateTime.fromFormat(t, 'hh:mm a', { zone: 'Asia/Dhaka' });\n    if (!dt.isValid) dt = DateTime.fromFormat(t, 'H:mm', { zone: 'Asia/Dhaka' });\n    if (!dt.isValid) dt = DateTime.fromFormat(t, 'HH:mm', { zone: 'Asia/Dhaka' });\n    o.time = dt.isValid ? dt.toFormat('HH:mm') : '09:00';\n  } else {\n    o.time = o.type === 'event' ? '09:00' : '';\n  }\n\n  o.priority = String(o.priority || 'normal').toLowerCase();\n  if (!o.duration_minutes || o.duration_minutes <= 0) o.duration_minutes = 60;\n\n  return { json: { output: o } };\n});\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        1536
+      ],
+      "id": "e5f6a640-26ec-43dd-a2d8-55309e18af6c",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Is Reply To Aurora?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Reply To Aurora?": {
+      "main": [
+        [
+          {
+            "node": "Parse Pending Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classifier Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Model (Classifier)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Classifier Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Classifier Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classifier Agent": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Fields": {
+      "main": [
+        [
+          {
+            "node": "Prepare Delete Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Event / Task / None": {
+      "main": [
+        [
+          {
+            "node": "Prepare Event Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Existing Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply: Not Recognized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Event Candidate": {
+      "main": [
+        [
+          {
+            "node": "Get Existing Calendar Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Calendar Events": {
+      "main": [
+        [
+          {
+            "node": "Check Time Overlap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Time Overlap": {
+      "main": [
+        [
+          {
+            "node": "Time Conflict?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Time Conflict?": {
+      "main": [
+        [
+          {
+            "node": "Reply: Time Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Reply: Event Created",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply: Event Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Tasks": {
+      "main": [
+        [
+          {
+            "node": "Check Task Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Task Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Task Already Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Task Already Exists?": {
+      "main": [
+        [
+          {
+            "node": "Reply: Task Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Google Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Google Task": {
+      "main": [
+        [
+          {
+            "node": "Reply: Task Created",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply: Task Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Pending Event": {
+      "main": [
+        [
+          {
+            "node": "Is Replace?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Replace?": {
+      "main": [
+        [
+          {
+            "node": "Delete Conflicting Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Time Parser Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Conflicting Event": {
+      "main": [
+        [
+          {
+            "node": "Prepare Replace Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Replace Candidate": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Model (Time Parser)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Time Parser Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser (Time)": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Time Parser Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Time Parser Agent": {
+      "main": [
+        [
+          {
+            "node": "Build New Time Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build New Time Candidate": {
+      "main": [
+        [
+          {
+            "node": "Get Existing Calendar Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Delete Request": {
+      "main": [
+        [
+          {
+            "node": "Delete: Event or Task?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete: Event or Task?": {
+      "main": [
+        [
+          {
+            "node": "Get Tasks To Delete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Events To Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Events To Delete": {
+      "main": [
+        [
+          {
+            "node": "Filter Matching Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Matching Events": {
+      "main": [
+        [
+          {
+            "node": "Delete Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Build Delete Summary (Events)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Delete Summary (Events)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Delete Summary (Events)": {
+      "main": [
+        [
+          {
+            "node": "Reply: Events Deleted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Tasks To Delete": {
+      "main": [
+        [
+          {
+            "node": "Filter Matching Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Matching Tasks": {
+      "main": [
+        [
+          {
+            "node": "Delete Google Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Google Task": {
+      "main": [
+        [
+          {
+            "node": "Build Delete Summary (Tasks)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Delete Summary (Tasks)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Delete Summary (Tasks)": {
+      "main": [
+        [
+          {
+            "node": "Reply: Tasks Deleted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Query Request": {
+      "main": [
+        [
+          {
+            "node": "Get Events For Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Events For Query": {
+      "main": [
+        [
+          {
+            "node": "Get Tasks For Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Tasks For Query": {
+      "main": [
+        [
+          {
+            "node": "Build Day Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Day Summary": {
+      "main": [
+        [
+          {
+            "node": "Reply: Day Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Normalize Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Query Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Route: Event / Task / None",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "nodeGroups": [],
+  "tags": []
+}

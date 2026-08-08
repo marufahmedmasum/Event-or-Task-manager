@@ -1,0 +1,16 @@
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Editors ---
+.vscode/
+.idea/
+
+# --- Never commit real secrets if you export with credentials included ---
+.env
+credentials.json
+*.key
+
+# --- Misc ---
+*.tmp
+*.bak
